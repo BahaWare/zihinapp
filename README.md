@@ -1,5 +1,313 @@
 # Zihin — Mental Performance & Digital Balance
 
+**Zihin** is a freemium **Mental Performance & Digital Balance** mobile app designed for young adults (ages 15-25). It tracks daily digital habits, provides AI-powered recommendations, and offers visual motivation through a **Mind City** diorama that reflects the user's mental state.
+
+> No shaming. Supportive, motivating, actionable steps only.
+
+---
+
+## Features
+
+| Module | Description |
+|---|---|
+| **Mind City Diorama** | A score-driven live city visualization (CustomPaint) that reflects mental performance. Buildings rise and lights brighten as the score improves; fog, cracks, and damage appear when it drops. |
+| **Mental Score** | A weighted 0-100 total score computed from Focus, Energy, Stability, and Noise sub-components. Real screen time data directly impacts the score. |
+| **Screen Time Tracking** | Pulls real app usage data via Android UsageStats API. Per-minute analysis across social media, video, gaming, and messaging categories. |
+| **AI Coach (Gemini)** | Personalized daily briefings, app analysis, risk assessment, and smart recommendations using Gemini 2.5 Flash. API usage optimized with 30-minute response caching. |
+| **Digital Detox** | AI-generated 7-day detox plans (easy/medium/hard difficulty). Each day includes a theme, goal, tasks, and tips. |
+| **Focus Sessions** | Pomodoro-style 25/50/90-minute focus sessions. Completed sessions earn XP and boost the score. |
+| **Recovery Activities** | Breathing exercises, journaling, stretching, and mindfulness activities. Repairs city damage and restores energy. |
+| **Usage Limits** | Category-based daily screen time limits (social media, video, gaming, messaging). |
+| **Detailed Analytics** | Daily/weekly screen time statistics, per-app usage breakdown, and category distribution charts. |
+| **Notifications** | Daily reminders, screen time warnings, streak celebrations (3/7/14/30 days), and night mode alerts. |
+| **Premium (RevenueCat)** | Monthly/yearly subscriptions unlock the AI coach, advanced analytics, and unlimited detox plans. |
+| **Onboarding** | 4-step profile creation: mode selection (student/general), goal setting, app selection, notification setup. An initial AI analysis is automatically triggered on completion. |
+
+---
+
+## Architecture
+
+### Offline-First, Event-Driven
+
+- **All data is stored in a local SQLite database** — no internet connection required.
+- City updates are **event-driven** — no continuous animations, battery-friendly.
+- Maximum **3 daily progress steps** — no information overload.
+- **No PII in analytics** — user identity never leaves the device.
+
+### Layered Architecture (Clean Architecture)
+
+```
+┌─────────────────────────────────────────┐
+│  Presentation (Screens + Widgets)       │
+│  └─ Riverpod Providers                  │
+├─────────────────────────────────────────┤
+│  Domain (Entities + Repository Intf.)   │
+│  └─ ScoringEngine, CityStateMachine,    │
+│     RecommendationEngine                │
+├─────────────────────────────────────────┤
+│  Data (Repository Impl + DataSources)   │
+│  └─ SQLite, SharedPrefs, Firebase       │
+├─────────────────────────────────────────┤
+│  Services (AI, Analytics, Notifications,│
+│            ScreenTime, Subscription)    │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Tech Stack
+
+| Category | Technology |
+|---|---|
+| Framework | Flutter 3.7+ |
+| State Management | Riverpod (manual providers) |
+| Navigation | GoRouter |
+| Local DB | sqflite |
+| Key-Value Store | SharedPreferences |
+| Backend | Firebase (Analytics, Crashlytics, Remote Config) |
+| AI | Gemini 2.5 Flash (HTTP API) |
+| Payments | RevenueCat (purchases_flutter + purchases_ui_flutter) |
+| Animation | Rive (placeholder), CustomPaint (active) |
+| Notifications | flutter_local_notifications |
+| UI | Google Fonts, Shimmer |
+| Platform Channel | Android UsageStats API (Kotlin) |
+
+---
+
+## Project Structure
+
+```
+lib/
+├── main.dart                          # App entry point
+├── app.dart                           # MaterialApp widget
+├── app_router.dart                    # All route definitions
+│
+├── core/
+│   ├── constants/
+│   │   ├── app_constants.dart         # App-wide constants
+│   │   └── scoring_constants.dart     # Score weights & thresholds
+│   └── theme/
+│       └── app_theme.dart             # Dark theme, color palette
+│
+├── domain/
+│   ├── entities/                      # Data models (Equatable)
+│   │   ├── user_profile.dart          # User profile
+│   │   ├── daily_stats.dart           # Daily statistics
+│   │   ├── city_state.dart            # City state
+│   │   ├── app_usage.dart             # App usage records
+│   │   ├── focus_session.dart         # Focus session
+│   │   ├── recovery_log.dart          # Recovery log
+│   │   └── subscription_state.dart    # Subscription state
+│   ├── repositories/                  # Repository interfaces
+│   ├── scoring/
+│   │   ├── scoring_engine.dart        # Deterministic score calculation
+│   │   └── scoring_types.dart         # ScoringInput & ScoreResult
+│   ├── city/
+│   │   └── city_state_machine.dart    # City state machine
+│   └── recommendations/
+│       └── recommendation_engine.dart # Rule-based recommendation engine
+│
+├── data/
+│   ├── datasources/local/
+│   │   ├── app_database.dart          # SQLite (8 tables, v2)
+│   │   └── shared_prefs.dart          # Onboarding, streak, cache
+│   └── repositories/                  # Repository implementations
+│
+├── services/
+│   ├── ai/gemini_service.dart         # Gemini AI (cache + retry)
+│   ├── analytics/                     # Firebase Analytics (PII-free)
+│   ├── crash/crash_service.dart       # Crashlytics
+│   ├── notifications/                 # Local notifications
+│   ├── screen_time/                   # Android platform channel
+│   └── subscription/                  # RevenueCat
+│
+├── features/                          # Feature-based modules
+│   ├── home/                          # Home screen + Mind City
+│   ├── onboarding/                    # 4-step profile creation
+│   ├── focus/                         # Focus sessions
+│   ├── recovery/                      # Recovery activities
+│   ├── ai_coach/                      # AI coach screen
+│   ├── detox/                         # Digital detox plans
+│   ├── insights/                      # Detailed analytics
+│   ├── limits/                        # Usage limits
+│   └── settings/                      # Settings + debug tools
+│
+└── shared/providers/
+    └── app_providers.dart             # Global Riverpod providers
+```
+
+---
+
+## Scoring System
+
+### Components & Weights
+
+| Component | Weight | Source |
+|---|---|---|
+| **Focus** | 35% | Focus minutes + session bonus |
+| **Energy** | 25% | Base 70, late-night penalty, recovery bonus, screen time penalty |
+| **Stability** | 25% | Streak days, session completion, recovery |
+| **Quiet** | 15% | 100 - Noise (distractions + late night + screen noise) |
+
+### Screen Time Impact
+
+- **Energy:** -5 at 2h+, -10 at 3h+, -15 at 4h+ of daily screen time
+- **Noise:** Distracting app minutes (social media + gaming + video) x 0.15 (capped at 30)
+
+### Threshold Levels
+
+| Level | Score Range | City State |
+|---|---|---|
+| Peak | 80-100 | Bright, golden tones, 12+ buildings, active construction |
+| Thriving | 60-79 | Warm tones, 8-11 buildings, light fog |
+| Building | 40-59 | Neutral, 5-7 buildings, moderate fog |
+| Struggling | 20-39 | Cold tones, 3-4 buildings, heavy fog |
+| Critical | 0-19 | Dark, smoke, cracks, visible damage |
+
+---
+
+## Database Schema
+
+SQLite database `zihin.db` (version 2):
+
+| Table | Description |
+|---|---|
+| `user_profiles` | User profile (mode, goal, apps, notifications) |
+| `daily_stats` | Daily performance metrics and scores |
+| `focus_sessions` | Focus session history |
+| `recovery_logs` | Recovery activity records |
+| `city_states` | City visualization state (daily) |
+| `subscription_states` | Subscription status cache |
+| `student_data` | Student-mode specific data |
+| `app_usage` | App usage tracking (added in v2) |
+
+---
+
+## API Integrations
+
+### Gemini AI
+
+- **Model:** `gemini-2.5-flash`
+- **Endpoint:** `generativelanguage.googleapis.com/v1beta`
+- **Features:**
+  - Daily briefing (cached in 4-hour windows)
+  - App risk analysis (cached per day)
+  - 7-day detox plan (cached by difficulty + average usage)
+  - Smart recommendations (cached in 4-hour windows)
+- **Rate Limiting:** 2 retries with exponential backoff (2s x attempt)
+- **Cache:** 30-minute TTL, max 20 entries (in-memory)
+
+### RevenueCat
+
+- **API Key:** Test store
+- **Entitlement:** `Zihin - Pro`
+- **Products:** `monthly`, `yearly`, `lifetime`
+- **Offline:** Cached entitlement status
+
+### Firebase
+
+- **Analytics:** PII-free event logging
+- **Crashlytics:** Error tracking (production)
+- **Remote Config:** Feature flags
+
+---
+
+## Android Platform Channel
+
+Access to the Android `UsageStatsManager` API via native Kotlin code through the `app.zihin.app/usage_stats` channel:
+
+```
+hasPermission()       → bool
+requestPermission()   → Opens system settings
+getDailyUsage(offset) → {totalMinutes, apps: [{packageName, appName, minutes, category}]}
+getCategoryUsage()    → {social_media, gaming, video, messaging, other}
+```
+
+**App Categorization:**
+- Social Media: Instagram, TikTok, Twitter, Snapchat, Reddit, LinkedIn, BeReal, Discord...
+- Video: YouTube, Netflix, Disney+, Twitch, Spotify, HBO...
+- Gaming: Clash of Clans, Minecraft, Fortnite, Roblox, FIFA...
+- Messaging: WhatsApp, Telegram, Slack, Teams, Viber...
+
+---
+
+## Screens (Routes)
+
+| Route | Screen | Description |
+|---|---|---|
+| `/splash` | SplashScreen | Initial loading |
+| `/onboarding` | OnboardingScreen | First-time setup (4 steps) |
+| `/home` | HomeScreen | Main dashboard + Mind City + score |
+| `/focus` | FocusScreen | Pomodoro focus sessions |
+| `/recovery` | RecoveryScreen | Recovery activities |
+| `/ai-coach` | AiCoachScreen | AI coach & analysis |
+| `/detox` | DetoxScreen | Digital detox plans |
+| `/insights` | InsightsScreen | Usage analytics |
+| `/limits` | LimitsScreen | Category limits |
+| `/settings` | SettingsScreen | Settings + debug tools |
+
+---
+
+## Debug Features
+
+Available only in debug mode (development builds):
+
+- **City Controls:** Buttons below the Mind City on the home screen for adding/removing buildings, upgrading levels, adjusting damage, and preset levels (Peak/Good/Medium/Bad)
+- **Profile Reset:** Settings > Debug > "Reset Profile" to wipe all data and return to onboarding
+- **Daily Data Wipe:** Settings > Debug > "Reset Daily Data"
+
+---
+
+## Setup
+
+### Requirements
+
+- Flutter SDK >= 3.7.2
+- Android Studio / VS Code
+- Android device or emulator (min SDK 24)
+- Firebase project (optional, works without it)
+
+### Steps
+
+```bash
+# 1. Install dependencies
+flutter pub get
+
+# 2. Create or edit the .env file
+# GEMINI_API_KEY, REVENUECAT_API_KEY_ANDROID, etc.
+
+# 3. Run on an Android device
+flutter run -d <device_id>
+
+# 4. Run on web (limited — screen time uses mock data)
+flutter run -d chrome
+```
+
+### Firebase Setup
+
+- `android/app/google-services.json` — Android Firebase config
+- `ios/Runner/GoogleService-Info.plist` — iOS Firebase config
+
+---
+
+## Non-Negotiable Rules
+
+1. **Offline-first**: All data stored locally, internet is optional
+2. **Local data**: PII never leaves the device
+3. **Event-driven**: No continuous animations, battery-friendly
+4. **Max 3 daily steps**: No information overload
+5. **Shame-free**: No shaming language, supportive tone only
+6. **Lightweight**: No heavy continuous animations
+
+---
+
+## License
+
+Private project — all rights reserved.
+
+
+# (LAN: TR) Zihin — Mental Performance & Digital Balance
+
 **Zihin**, 15-25 yaş arası gençlere yönelik, freemium modelli bir **Zihinsel Performans ve Dijital Denge** uygulamasıdır. Kullanıcının günlük dijital alışkanlıklarını takip eder, yapay zeka destekli öneriler sunar ve zihinsel durumu yansıtan bir **Mind City** dioraması ile görsel motivasyon sağlar.
 
 > Utandırma yok. Destekleyici, motive edici, somut adımlar.
